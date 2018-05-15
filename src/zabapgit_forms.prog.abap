@@ -7,7 +7,7 @@
 *&---------------------------------------------------------------------*
 FORM run.
 
-  DATA: lx_exception TYPE REF TO lcx_exception,
+  DATA: lx_exception TYPE REF TO zcx_abapgit_exception,
         lv_ind       TYPE t000-ccnocliind.
 
 
@@ -21,13 +21,24 @@ FORM run.
   ENDIF.
 
   TRY.
-      lcl_migrations=>run( ).
-      lcl_app=>run( ).
-    CATCH lcx_exception INTO lx_exception.
-      MESSAGE lx_exception->mv_text TYPE 'E'.
+      zcl_abapgit_migrations=>run( ).
+      PERFORM open_gui.
+    CATCH zcx_abapgit_exception INTO lx_exception.
+      MESSAGE lx_exception TYPE 'E'.
   ENDTRY.
 
 ENDFORM.                    "run
+
+FORM open_gui RAISING zcx_abapgit_exception.
+
+  IF sy-batch = abap_true.
+    zcl_abapgit_background=>run( ).
+  ELSE.
+    zcl_abapgit_gui=>get_instance( )->go_home( ).
+    CALL SELECTION-SCREEN 1001. " trigger screen
+  ENDIF.
+
+ENDFORM.
 
 *&---------------------------------------------------------------------*
 *&      Form  branch_popup
@@ -39,102 +50,56 @@ ENDFORM.                    "run
 *      -->CS_ERROR       text
 *      -->CV_SHOW_POPUP  text
 *      -->RAISING        text
-*      -->LCX_EXCEPTION  text
+*      -->zcx_abapgit_exception  text
 *      -->##CALLED       text
 *      -->##NEEDED       text
 *----------------------------------------------------------------------*
-FORM branch_popup TABLES   tt_fields TYPE ty_sval_tt
+FORM branch_popup TABLES   tt_fields TYPE zif_abapgit_definitions=>ty_sval_tt
                   USING    pv_code TYPE clike
                   CHANGING cs_error TYPE svale
                            cv_show_popup TYPE c
-                  RAISING lcx_exception ##called ##needed.
+                  RAISING zcx_abapgit_exception ##called ##needed.
 * called dynamically from function module POPUP_GET_VALUES_USER_BUTTONS
 
-  DATA: lv_url          TYPE string,
-        lx_error        TYPE REF TO lcx_exception,
-        ls_package_data TYPE scompkdtln,
-        ls_branch       TYPE lcl_git_branch_list=>ty_git_branch,
-        lv_create       TYPE boolean.
+  DATA: lx_error TYPE REF TO zcx_abapgit_exception.
 
-  FIELD-SYMBOLS: <ls_furl>    LIKE LINE OF tt_fields,
-                 <ls_fbranch> LIKE LINE OF tt_fields.
+  TRY.
+      zcl_abapgit_popups=>branch_popup_callback(
+        EXPORTING
+          iv_code       = pv_code
+        CHANGING
+          ct_fields     = tt_fields[]
+          cs_error      = cs_error
+          cv_show_popup = cv_show_popup ).
 
-
-  CLEAR cs_error.
-
-  IF pv_code = 'COD1'.
-    cv_show_popup = abap_true.
-
-    READ TABLE tt_fields ASSIGNING <ls_furl> WITH KEY tabname = 'ABAPTXT255'.
-    IF sy-subrc <> 0 OR <ls_furl>-value IS INITIAL.
-      MESSAGE 'Fill URL' TYPE 'S' DISPLAY LIKE 'E'.         "#EC NOTEXT
-      RETURN.
-    ENDIF.
-    lv_url = <ls_furl>-value.
-
-    TRY.
-        ls_branch = lcl_popups=>branch_list_popup( lv_url ).
-      CATCH lcx_exception INTO lx_error.
-        MESSAGE lx_error TYPE 'S' DISPLAY LIKE 'E'.
-        RETURN.
-    ENDTRY.
-    IF ls_branch IS INITIAL.
-      RETURN.
-    ENDIF.
-
-    READ TABLE tt_fields ASSIGNING <ls_fbranch> WITH KEY tabname = 'TEXTL'.
-    ASSERT sy-subrc = 0.
-    <ls_fbranch>-value = ls_branch-name.
-
-  ELSEIF pv_code = 'COD2'.
-    cv_show_popup = abap_true.
-
-    lcl_popups=>popup_to_create_package( IMPORTING es_package_data = ls_package_data
-                                                   ev_create       = lv_create ).
-    IF lv_create = abap_false.
-      RETURN.
-    ENDIF.
-
-    lcl_sap_package=>create( ls_package_data ).
-    COMMIT WORK.
-
-    READ TABLE tt_fields ASSIGNING <ls_fbranch> WITH KEY tabname = 'TDEVC'.
-    ASSERT sy-subrc = 0.
-    <ls_fbranch>-value = ls_package_data-devclass.
-  ENDIF.
+    CATCH zcx_abapgit_exception INTO lx_error.
+      MESSAGE lx_error TYPE 'S' DISPLAY LIKE 'E'.
+  ENDTRY.
 
 ENDFORM.                    "branch_popup
 
-FORM package_popup TABLES   tt_fields TYPE ty_sval_tt
+FORM package_popup TABLES   tt_fields TYPE zif_abapgit_definitions=>ty_sval_tt
                    USING    pv_code TYPE clike
                    CHANGING cs_error TYPE svale
                             cv_show_popup TYPE c
-                   RAISING  lcx_exception ##called ##needed.
+                   RAISING  zcx_abapgit_exception ##called ##needed.
 * called dynamically from function module POPUP_GET_VALUES_USER_BUTTONS
 
-  DATA: ls_package_data TYPE scompkdtln,
-        lv_create       TYPE boolean.
+  DATA: lx_error TYPE REF TO zcx_abapgit_exception.
 
-  FIELD-SYMBOLS: <ls_fbranch> LIKE LINE OF tt_fields.
+  TRY.
+      zcl_abapgit_popups=>package_popup_callback(
+        EXPORTING
+          iv_code       = pv_code
+        CHANGING
+          ct_fields     = tt_fields[]
+          cs_error      = cs_error
+          cv_show_popup = cv_show_popup ).
 
-  CLEAR cs_error.
+    CATCH zcx_abapgit_exception INTO lx_error.
+      MESSAGE lx_error TYPE 'S' DISPLAY LIKE 'E'.
+  ENDTRY.
 
-  IF pv_code = 'COD1'.
-    cv_show_popup = abap_true.
-
-    lcl_popups=>popup_to_create_package( IMPORTING es_package_data = ls_package_data
-                                                   ev_create       = lv_create ).
-    IF lv_create = abap_false.
-      RETURN.
-    ENDIF.
-
-    lcl_sap_package=>create( ls_package_data ).
-    COMMIT WORK.
-
-    READ TABLE tt_fields ASSIGNING <ls_fbranch> WITH KEY tabname = 'TDEVC'.
-    ASSERT sy-subrc = 0.
-    <ls_fbranch>-value = ls_package_data-devclass.
-  ENDIF.
 ENDFORM.                    "package_popup
 
 FORM output.
@@ -150,11 +115,27 @@ FORM output.
       p_exclude = lt_ucomm.
 ENDFORM.
 
-FORM exit RAISING lcx_exception.
+FORM exit RAISING zcx_abapgit_exception.
   CASE sy-ucomm.
     WHEN 'CBAC'.  "Back
-      IF lcl_app=>gui( )->back( ) IS INITIAL.
+      IF zcl_abapgit_gui=>get_instance( )->back( ) IS INITIAL.
         LEAVE TO SCREEN 1001.
       ENDIF.
   ENDCASE.
+ENDFORM.
+
+FORM password_popup
+      USING
+        iv_repo_url TYPE string
+      CHANGING
+        cv_user     TYPE string
+        cv_pass     TYPE string.
+
+  lcl_password_dialog=>popup(
+    EXPORTING
+      iv_repo_url     = iv_repo_url
+    CHANGING
+      cv_user         = cv_user
+      cv_pass         = cv_pass ).
+
 ENDFORM.
